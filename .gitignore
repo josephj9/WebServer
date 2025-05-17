@@ -1,0 +1,43 @@
+# Build results
+bin/
+obj/
+*.exe
+*.dll
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code settings
+.vscode/
+
+# Rider IDE settings
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# NuGet packages
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# Logs
+*.log
+
+# ASP.NET-specific
+wwwroot/
+node_modules/
+
+# Optional: if you ever use publish folder
+publish/
+
+# Compiled files
+*.pdb
+*.cache
+*.db
