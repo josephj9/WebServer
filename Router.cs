@@ -10,14 +10,19 @@ using Clifton.Extensions;
 using ConsoleWebServer;
 using WebServer;
 
+
+public class Route{
+  public string Verb { get; set; }
+  public string Path { get; set; }
+  public Func<Dictionary<string,string>, string> Action { get; set; }
+}
 public class ExtensionInfo
 {
     public Func<string, string, ExtensionInfo, ResponsePacket> Loader { get; set; }
     public string ContentType { get; set; }
 }
 
-public class ResponsePacket
-{
+public class ResponsePacket{
     public string Redirect { get; set; }
     public byte[] Data { get; set; }
     public string ContentType { get; set; }
@@ -26,11 +31,18 @@ public class ResponsePacket
 
 }
 
-public class Router
+public  class Router
 {
+    public const string GET = "GET";
+    public const string POST = "POST";
+    public const string PUT = "PUT";
+    public const string DELETE = "DELETE";
+
     public string WebsitePath { get; set; }
 
     private Dictionary<string, ExtensionInfo> extFolderMap;
+    public List<Route> routes = new List<Route>();
+
 
     public Router()
     {
@@ -51,8 +63,9 @@ public class Router
     private ResponsePacket ImageLoader(string fullPath, string ext, ExtensionInfo extInfo)
     {
 
-        if (!File.Exists(fullPath)){
-        return new ResponsePacket() { Error = Server.ServerError.FileNotFound };
+        if (!File.Exists(fullPath))
+        {
+            return new ResponsePacket() { Error = Server.ServerError.FileNotFound };
         }
 
         using (FileStream fStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read))
@@ -79,38 +92,63 @@ public class Router
     }
 
     private ResponsePacket PageLoader(string fullPath, string ext, ExtensionInfo extInfo)
-    {   
-        if (!File.Exists(fullPath)){
-                return new ResponsePacket() { Error = Server.ServerError.FileNotFound };
-            }
-
+    {
         if (fullPath == WebsitePath)
         {
             return Route("GET", "/index.html", null);
         }
+
+        fullPath = Path.Combine(WebsitePath, "Pages", fullPath.RightOf(WebsitePath).TrimStart('\\', '/'));
 
         if (String.IsNullOrEmpty(ext))
         {
             fullPath += ".html";
         }
 
-        fullPath = Path.Combine(WebsitePath, "Pages", fullPath.RightOf(WebsitePath).TrimStart('\\', '/'));
+        if (!File.Exists(fullPath))
+        {
+            return new ResponsePacket() { Error = Server.ServerError.FileNotFound };
+        }
+
         return FileLoader(fullPath, ext, extInfo);
+
     }
 
     public ResponsePacket Route(string verb, string path, Dictionary<string, string> kvParams)
-    {   
-        if (path == "/"){
-            path = "/index.html";
-        }
-
-        string ext = path.RightOf('.');
-        if (extFolderMap.TryGetValue(ext, out ExtensionInfo extInfo)){
-            string fullPath = Path.Combine(WebsitePath, path.TrimStart('/').Replace("/", "\\"));
-            return extInfo.Loader(fullPath, ext, extInfo);
-        }
-        else{
-            return new ResponsePacket() { Error = Server.ServerError.UnknownType };
-        }
+    {
+    if (path == "/")
+    {
+        path = "/index.html";
     }
+
+    string ext = path.RightOf('.');
+    ResponsePacket response = null;
+    verb = verb.ToLower();
+
+    // Look for a matching custom route
+    Route matchedRoute = routes.SingleOrDefault(r => r.Verb.ToLower() == verb && r.Path == path);
+    if (matchedRoute != null){
+        string redirect = matchedRoute.Action(kvParams);
+
+        if (!string.IsNullOrEmpty(redirect)){
+            return new ResponsePacket() { Redirect = redirect };
+        }
+        // If no redirect, fall through to regular file load
+    }
+
+    // Fallback to static file loading
+    if (extFolderMap.TryGetValue(ext, out ExtensionInfo extInfo)){
+        string fullPath = Path.Combine(WebsitePath, path.TrimStart('/').Replace("/", "\\"));
+        response = extInfo.Loader(fullPath, ext, extInfo);
+    }
+    else{
+        response = new ResponsePacket() { Error = Server.ServerError.UnknownType };
+    }
+    return response;
+    }
+    
+    public void AddRoute(Route route){
+        routes.Add(route);
+    }
+
 }

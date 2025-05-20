@@ -28,6 +28,7 @@ namespace WebServer
 		}
         public static Func<ServerError, string> onError;
         private static HttpListener listener;
+
         private static List<IPAddress> GetLocalHostIPs()
         {
             IPHostEntry host;
@@ -62,64 +63,83 @@ namespace WebServer
                 StartConnectionListener(listener);
             }
         }
-        private static async void StartConnectionListener(HttpListener listener)
+        
+private static async void StartConnectionListener(HttpListener listener)
         {
-            HttpListenerContext context = await listener.GetContextAsync();
-            sem.Release();
-            Log(context.Request);
-            HttpListenerRequest request = context.Request;
-            string path = request.RawUrl.LeftOf("?");         
-            string verb = request.HttpMethod;                 
-            string parms = request.RawUrl.RightOf("?");      
-            Dictionary<string, string> kvParams = GetKeyValues(parms); 
+            HttpListenerContext context = null;
 
-            ResponsePacket packet = router.Route(verb, path, kvParams);
-
-            if (packet.Error != ServerError.OK && onError != null)
+            try
             {
-                string errorPath = onError(packet.Error);
-                if (!string.IsNullOrEmpty(errorPath) && !path.Equals(errorPath, StringComparison.OrdinalIgnoreCase))
+                context = await listener.GetContextAsync();
+                sem.Release();
+
+                HttpListenerRequest request = context.Request;
+                string path = request.RawUrl.LeftOf("?");
+                string verb = request.HttpMethod;
+                string parms = request.RawUrl.RightOf("?");
+
+                Dictionary<string, string> kvParams = GetKeyValues(parms);
+
+                if (request.HasEntityBody && request.HttpMethod.ToUpper() == "POST")
                 {
-                    packet.Redirect = errorPath;
+                    using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                    {
+                        string postData = await reader.ReadToEndAsync();
+                        GetKeyValues(postData, kvParams); // Add POST parameters to the same dictionary
+                    }
+                }
+
+                Log(kvParams); 
+
+                ResponsePacket packet = router.Route(verb, path, kvParams);
+
+                if (packet.Error != ServerError.OK && onError != null)
+                {
+                    string errorPath = onError(packet.Error);
+                    if (!string.IsNullOrEmpty(errorPath) && !path.Equals(errorPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        packet.Redirect = errorPath;
+                    }
+                }
+
+                Respond(request, context.Response, packet);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                Console.WriteLine(ex.StackTrace);
+                if (context != null)
+                {
+                    var packet = new ResponsePacket
+                    {
+                        Redirect = onError?.Invoke(ServerError.ServerError)
+                    };
+                    Respond(context.Request, context.Response, packet);
                 }
             }
-
-
-            Respond(context.Request, context.Response, packet);
-
-
         }
+
+
         private static Router router = new Router();
 
 
-        private static Dictionary<string, string> GetKeyValues(string query)
+        private static Dictionary<string, string> GetKeyValues(string data, Dictionary<string, string> kv = null)
         {
-            var dict = new Dictionary<string, string>();
-            if (string.IsNullOrEmpty(query)) return dict;
+        kv.IfNull(() => kv = new Dictionary<string, string>());
+        data.If(d => d.Length > 0, (d) => d.Split('&').ForEach(keyValue => kv[keyValue.LeftOf('=')] = keyValue.RightOf('=')));
 
-            var pairs = query.Split('&');
-            foreach (var pair in pairs)
-            {
-                var kv = pair.Split('=');
-                if (kv.Length == 2)
-                {
-                    dict[WebUtility.UrlDecode(kv[0])] = WebUtility.UrlDecode(kv[1]);
-                }
-            }
-            return dict;
+        return kv;
         }
-
         public static void Start()
         {
             List<IPAddress> localHostIPs = GetLocalHostIPs();
             HttpListener listener = InitializeListener(localHostIPs);
             Start(listener);
         }
-        public static void Log(HttpListenerRequest request)
+        private static void Log(Dictionary<string, string> kv)
         {
-            Console.WriteLine(request.RemoteEndPoint + " " + request.HttpMethod + " /" + request.Url.AbsoluteUri.RightOf('/', 3));
+        kv.ForEach(kvp=>Console.WriteLine(kvp.Key+" : "+kvp.Value));
         }
-
         public static string GetWebsitePath(){
                 string exePath = Assembly.GetExecutingAssembly().Location;
                 string projectRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(exePath), @"..\..\.."));

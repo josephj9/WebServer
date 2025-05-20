@@ -16,9 +16,26 @@ namespace ConsoleWebServer
     {
         static void Main(string[] args)
         {
-            Server.onError = ErrorHandler;
-            Server.Start(Server.GetWebsitePath());
-            Console.ReadLine();
+        string websitePath = Server.GetWebsitePath();
+        Server.onError = ErrorHandler;
+        Router server = new Router();
+
+
+            // Register a custom POST route
+            server.AddRoute(new Route
+            {
+                Verb = Router.POST,
+                Path = "/Pages/demo/redirect",
+                Action = RedirectMe
+            });
+
+            Server.Start(websitePath);
+            Console.ReadLine();            
+            
+        }
+        public static string RedirectMe(Dictionary<string, string> parms)
+        {
+            return "/Pages/demo/clicked.html"; 
         }
 
         public static string ErrorHandler(Server.ServerError error)
